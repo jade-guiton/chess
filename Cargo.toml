@@ -1,0 +1,29 @@
+[package]
+name = "pyxyne_chess"
+version = "0.1.0"
+edition = "2021"
+default-run = "chess"
+
+[lib]
+name = "chesslib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chess"
+path = "src/gui.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bench.rs"
+
+[[bin]]
+name = "bot"
+path = "src/bot.rs"
+
+[dependencies]
+rand = "0.8.5"
+reqwest = { version = "0.12.5", features = ["blocking", "json"] }
+sdl2 = { version = "0.37.0", features = ["ttf", "image", "gfx"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8.14"

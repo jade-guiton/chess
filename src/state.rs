@@ -211,19 +211,52 @@ pub struct Move {
 	pub special: SpecialMove,
 }
 
-#[cfg(test)]
 pub enum ParseMoveError {
 	InvalidSyntax,
 	AmbiguousMove,
 	IllegalMove,
 }
-#[cfg(test)]
+impl fmt::Display for ParseMoveError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.write_str(match self {
+			ParseMoveError::InvalidSyntax => "invalid syntax",
+			ParseMoveError::AmbiguousMove => "ambiguous move",
+			ParseMoveError::IllegalMove => "illegal move",
+		})
+	}
+}
 fn or_invalid<T>(opt: Option<T>) -> Result<T, ParseMoveError> {
 	opt.ok_or(ParseMoveError::InvalidSyntax)
 }
-#[cfg(test)]
 impl Move {
-	pub fn parse<'moves>(s: &str, legal_moves: &'moves [Move]) -> Result<&'moves Move, ParseMoveError> {
+	pub fn parse_uci<'moves>(s: &str, legal_moves: &'moves [Move]) -> Result<&'moves Move, ParseMoveError> {
+		let mut chars = s.chars().peekable();
+		let from_file = or_invalid(parse_file(or_invalid(chars.next())? as u8))?;
+		let from_rank = or_invalid(parse_rank(or_invalid(chars.next())? as u8))?;
+		let from_squ = Square::at(from_file, from_rank);
+		let to_file = or_invalid(parse_file(or_invalid(chars.next())? as u8))?;
+		let to_rank = or_invalid(parse_rank(or_invalid(chars.next())? as u8))?;
+		let to_squ = Square::at(to_file, to_rank);
+		let promotion = match chars.next() {
+			Some('n') => Some(PieceType::Knight),
+			Some('b') => Some(PieceType::Bishop),
+			Some('r') => Some(PieceType::Rook),
+			Some('q') => Some(PieceType::Queen),
+			None => None,
+			_ => return Err(ParseMoveError::InvalidSyntax),
+		};
+		let mut mov = None;
+		for mov2 in legal_moves {
+			if mov2.from == from_squ && mov2.to == to_squ && promotion == mov2.special.get_promotion() {
+				if mov.is_some() {
+					return Err(ParseMoveError::AmbiguousMove);
+				}
+				mov = Some(mov2)
+			}
+		}
+		mov.ok_or(ParseMoveError::IllegalMove)
+	}
+	pub fn parse_algebraic<'moves>(s: &str, legal_moves: &'moves [Move]) -> Result<&'moves Move, ParseMoveError> {
 		if let Some(special_move) = match s {
 			"O-O-O" | "0-0-0" => Some(SpecialMove::CastleQ),
 			"O-O" | "0-0" => Some(SpecialMove::CastleK),
@@ -316,9 +349,6 @@ impl Move {
 		}
 		mov.ok_or(ParseMoveError::IllegalMove)
 	}
-}
-
-impl Move {
 	pub fn uci_notation(&self) -> String {
 		let mut res = format!("{}{}", self.from, self.to);
 		if let Some(promote_to) = self.special.get_promotion() {
@@ -328,6 +358,11 @@ impl Move {
 	}
 }
 
+impl fmt::Debug for Move {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "Move({})", self)
+	}
+}
 impl fmt::Display for Move {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{}{}{}", self.ptype.algebraic(), self.from, self.to)?;
@@ -377,7 +412,6 @@ impl Board {
 		board
 	}
 
-	#[cfg(test)]
 	pub fn to_fen(&self) -> String {
 		let pieces = self.get_pieces();
 		let mut res = String::new();

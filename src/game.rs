@@ -86,7 +86,6 @@ impl Position {
 		Some(Position { board, unmoved, en_passant_target, ply_number, half_move_clock })
 	}
 
-	#[cfg(test)]
 	pub fn to_fen(&self) -> String {
 		use std::fmt::Write;
 
@@ -256,7 +255,7 @@ impl Position {
 		let mut pawn_forward = pawns.shift_ver(color.up());
 		let pawn_cap_left = pawn_forward.shift_left(1);
 		let pawn_cap_right = pawn_forward.shift_right(1);
-		if color == self.side_to_move() && self.en_passant_target.is_some() {
+		if self.en_passant_target.is_some() {
 			let squ = self.en_passant_target.unwrap();
 			if pawn_cap_left.at(squ) {
 				moves.push(Move {
@@ -272,7 +271,7 @@ impl Position {
 			}
 		}
 		pawn_forward &= !pieces;
-		let pawn_push = pawn_forward.shift_ver(color.up()) & !pieces & self.unmoved.shift_up(2);
+		let pawn_push = pawn_forward.shift_ver(color.up()) & !pieces & self.unmoved.shift_ver(2 * color.up());
 		for to in pawn_forward.iter() {
 			Position::gen_pawn_moves(&mut moves, color, to.shift(0, color.down()), to);
 		}
@@ -460,7 +459,7 @@ use crate::{game::Position, state::{Move, ParseMoveError}};
 			}
 
 			for mov in case.expected {
-				if let Err(err) = Move::parse(&mov.r#move, &moves) {
+				if let Err(err) = Move::parse_algebraic(&mov.r#move, &moves) {
 					let err_desc = match err {
 						ParseMoveError::AmbiguousMove => "ambiguous",
 						ParseMoveError::IllegalMove => "illegal",

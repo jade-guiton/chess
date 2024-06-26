@@ -318,6 +318,16 @@ impl Move {
 	}
 }
 
+impl Move {
+	pub fn uci_notation(&self) -> String {
+		let mut res = format!("{}{}", self.from, self.to);
+		if let Some(promote_to) = self.special.get_promotion() {
+			write!(res, "{}", promote_to.algebraic()).unwrap();
+		}
+		res
+	}
+}
+
 impl fmt::Display for Move {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{}{}{}", self.ptype.algebraic(), self.from, self.to)?;

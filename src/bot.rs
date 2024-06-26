@@ -1,6 +1,6 @@
 use std::{fmt::{Display, Write}, time::Duration};
 
-use chesslib::{ai::{self, ChessAi}, game::Position};
+use chesslib::{ai::ChessAi, game::Position};
 use reqwest::{blocking::Client, Method, Url};
 use serde::{de::DeserializeOwned, Deserialize};
 use toml::Table;
@@ -81,6 +81,15 @@ impl Bot {
 			return res.json::<Res>().map_err(|e| format!("unexpected response: {}", e));
 		}
 	}
+	fn action(&self, req: BotReq) -> Result<(), String> {
+		#[derive(Deserialize, Debug)]
+		struct OkRes { ok: bool }
+		let data: OkRes = self.request(req)?;
+		if !data.ok {
+			return Err(format!("unexpected ok=false in 200 response"));
+		}
+		Ok(())
+	}
 }
 
 fn run_bot() -> Result<(), String> {
@@ -88,12 +97,26 @@ fn run_bot() -> Result<(), String> {
 		.map_err(|e| format!("could not read bot_config.toml: {}", e))?
 		.parse::<Table>()
 		.map_err(|e| format!("bot_config.toml: invalid syntax: {}", e))?;
+
 	let token = config.get("BOT_TOKEN")
 		.ok_or_else(|| format!("bot_config.toml: no BOT_TOKEN key"))?
 		.clone();
 	let token = if let toml::Value::String(token) = token { token } else {
 		return Err(format!("bot_config.toml: BOT_TOKEN is not a string"));
 	};
+	let depth = config.get("SEARCH_DEPTH")
+		.ok_or_else(|| format!("bot_config.toml: no SEARCH_DEPTH key"))?
+		.clone();
+	let depth = if let toml::Value::Integer(depth) = depth { depth } else {
+		return Err(format!("bot_config.toml: SEARCH_DEPTH is not an integer"));
+	};
+	if depth < 1 {
+		return Err(format!("bot_config.toml: SEARCH_DEPTH is not positive"));
+	}
+	let depth = depth as u32;
+
+	let ai = chesslib::ai::SimpleAi::new(depth);
+
 	let client = Client::new();
 	let bot = Bot { token, client };
 
@@ -105,51 +128,50 @@ fn run_bot() -> Result<(), String> {
 	let data: AccountData = bot.request(get("account"))?;
 	println!("Playing as {}", data.username);
 
-
-	#[derive(Deserialize, Debug)]
-	#[serde(rename_all = "camelCase")]
-	struct PlayingData {
-		now_playing: Vec<GameData>,
-	}
-	#[derive(Deserialize, Debug)]
-	#[serde(rename_all = "camelCase")]
-	struct GameData {
-		game_id: String,
-		is_my_turn: bool,
-		fen: String,
-	}
-	let data: PlayingData = bot.request(get("account/playing").query("nb", 10))?;
-	
-	for game in data.now_playing {
-		if game.is_my_turn {
-			println!("Game {}: {}", game.game_id, game.fen);
-			let pos = Position::from_fen(&game.fen)
-				.ok_or_else(|| format!("failed to parse FEN"))?;
-			println!("Thinking...");
-			let moves = pos.gen_legal();
-			let mov = ai::SimpleAi::new(6).pick_move(&pos, &moves);
-			println!("Move: {}", mov);
-
-			let data: serde_json::Value = bot.request(post("bot/game")
-				.path(game.game_id).path("move").path(mov.uci_notation()))?;
-			println!("Response: {}", data);
-
-			break;
+	loop {
+		#[derive(Deserialize, Debug)]
+		#[serde(rename_all = "camelCase")]
+		struct PlayingData {
+			now_playing: Vec<GameData>,
 		}
-	}
+		#[derive(Deserialize, Debug)]
+		#[serde(rename_all = "camelCase")]
+		struct GameData {
+			game_id: String,
+			is_my_turn: bool,
+			fen: String,
+		}
+		let mut data: PlayingData = bot.request(get("account/playing").query("nb", 10))?;
+		
+		if data.now_playing.len() > 0 {
+			data.now_playing.retain(|g| g.is_my_turn);
 
-	/*
-	#[derive(Deserialize, Debug)]
-	struct ChallengeAiData {
-		id: String,
-		fen: String,
-		player: String,
-	}
-	let data: ChallengeAiData = bot.request(post("challenge/ai").body("level", 1))?;
-	println!("Response: {:?}", data);
-	*/
+			if let Some(game) = data.now_playing.first() {
+				println!("Game {}: {}", game.game_id, game.fen);
+				let pos = Position::from_fen(&game.fen)
+					.ok_or_else(|| format!("failed to parse FEN"))?;
+				println!("Thinking...");
+				let moves = pos.gen_legal();
+				let mov = ai.pick_move(&pos, &moves);
+				println!("Move: {}", mov);
 
-	Ok(())
+				bot.action(post("bot/game")
+					.path(&game.game_id).path("move").path(mov.uci_notation()))?;
+			}
+		} else {
+			println!("No current games, challenging AI");
+
+			#[derive(Deserialize, Debug)]
+			struct ChallengeAiData {
+				id: String,
+			}
+			let data: ChallengeAiData = bot.request(post("challenge/ai").body("level", 1))?;
+			println!("New game: {}", data.id);
+		}
+
+		std::thread::sleep(Duration::from_millis(500));
+		println!();
+	}
 }
 
 fn main() {

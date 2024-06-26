@@ -4,7 +4,7 @@ use crate::{game::Position, state::{Board, Color, Move, Piece, PieceType, Square
 
 pub trait ChessAi: Send {
 	fn name(&self) -> String;
-	fn pick_move(&mut self, pos: &Position, legal_moves: &[Move]) -> Move;
+	fn pick_move(&self, pos: &Position, legal_moves: &[Move]) -> Move;
 }
 
 pub struct ParallelAi {
@@ -31,7 +31,7 @@ impl ParallelAi {
 		let legal_moves = legal_moves.to_owned();
 		let ai = self.ai.clone();
 		self.thinker = Some(std::thread::spawn(move || {
-			let mut ai = ai.lock().unwrap();
+			let ai = ai.lock().unwrap();
 			return ai.pick_move(&pos, &legal_moves);
 		}));
 	}
@@ -52,7 +52,7 @@ impl ChessAi for RandomAi {
 	fn name(&self) -> String {
 		return "RandomAI".to_string();
 	}
-	fn pick_move(&mut self, _position: &Position, legal_moves: &[Move]) -> Move {
+	fn pick_move(&self, _position: &Position, legal_moves: &[Move]) -> Move {
 		legal_moves[rand::random::<usize>() % legal_moves.len()]
 	}
 }
@@ -215,7 +215,7 @@ impl ChessAi for SimpleAi {
 	fn name(&self) -> String {
 		return format!("SimpleAI {}", self.depth);
 	}
-	fn pick_move(&mut self, pos: &Position, legal_moves: &[Move]) -> Move {
+	fn pick_move(&self, pos: &Position, legal_moves: &[Move]) -> Move {
 		let t0 = Instant::now();
 		let mut max = std::i16::MIN;
 		let mut best_move = None;

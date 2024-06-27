@@ -223,7 +223,7 @@ impl ChessAi for SimpleAi {
 			let mut pos2 = pos.clone();
 			pos2.apply_move(mov);
 			let score = -negamax(&pos2, self.depth - 1, -std::i16::MAX, std::i16::MAX);
-			if score > max {
+			if score > max || (score == max && rand::random::<u8>() < 128) {
 				max = score;
 				best_move = Some(mov);
 			}

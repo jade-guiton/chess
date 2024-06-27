@@ -1,3 +1,4 @@
 /target
 chess.tar.gz
 bot_config.toml
+bot_blacklist.txt

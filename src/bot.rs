@@ -33,6 +33,8 @@ struct Config {
 	play_rated: bool,
 	clock_initial: i64,
 	clock_increment: i64,
+	idle_timeout: u64,
+	challenge_timeout: u64,
 }
 fn load_config() -> Result<Config, String> {
 	let config = std::fs::read_to_string("bot_config.toml")
@@ -69,8 +71,20 @@ fn load_config() -> Result<Config, String> {
 		return Err(format!("bot_config.toml: CLOCK_INCREMENT is not in [0, 60]"));
 	}
 
+	let idle_timeout = config_get_integer(&config, "IDLE_TIMEOUT")?;
+	if idle_timeout < 0 {
+		return Err(format!("bot_config.toml: IDLE_TIMEOUT is negative"));
+	}
+	let idle_timeout = idle_timeout as u64;
+
+	let challenge_timeout = config_get_integer(&config, "CHALLENGE_TIMEOUT")?;
+	if challenge_timeout < 0 {
+		return Err(format!("bot_config.toml: CHALLENGE_TIMEOUT is negative"));
+	}
+	let challenge_timeout = challenge_timeout as u64;
+
 	Ok(Config {
-		token, depth, play_rated, clock_initial, clock_increment
+		token, depth, play_rated, clock_initial, clock_increment, idle_timeout, challenge_timeout,
 	})
 }
 
@@ -333,7 +347,7 @@ impl Bot {
 		'game_loop: loop {
 			println!("state: {}", pos.to_fen());
 
-			if pos.side_to_move() == color {
+			if pos.side_to_move() == color && !moves.is_empty() {
 				println!("thinking...");
 				let mov = ai.pick_move(&pos, &moves);
 				println!("playing {}", mov);
@@ -459,7 +473,7 @@ impl Bot {
 		println!("challenge sent, waiting...");
 
 		let status;
-		if let Some(msg) = stream.read_timeout(Duration::from_secs(30)) {
+		if let Some(msg) = stream.read_timeout(Duration::from_secs(self.config.challenge_timeout)) {
 			if let ChallengeStreamData::Response { done } = msg? {
 				status = done;
 			} else {
@@ -525,7 +539,7 @@ impl Bot {
 		Ok(false)
 	}
 
-	fn await_challenge(&self, timeout: Duration) -> Result<bool, String> {
+	fn await_challenge(&self) -> Result<bool, String> {
 		#[derive(Deserialize, Debug)]
 		struct Challenges {
 			r#in: Vec<Challenge>,
@@ -549,7 +563,7 @@ impl Bot {
 			ChallengeDeclined,
 		}
 
-		let timeout_instant = Instant::now() + timeout;
+		let timeout_instant = Instant::now() + Duration::from_secs(self.config.idle_timeout);
 		let stream = self.client.stream_json(get("stream/event"))?;
 		while let Some(res) = stream.read_timeout(timeout_instant - Instant::now()) {
 			let event: GameEvent = res?;
@@ -578,7 +592,7 @@ fn main() {
 				}
 			} else {
 				println!("no active game, waiting for challenges...");
-				if bot.await_challenge(Duration::from_secs(5*60))? { continue }
+				if bot.await_challenge()? { continue }
 				println!("received no challenges, starting matchmaking");
 				if let Some(username) = bot.find_bot_opponent()? {
 					bot.challenge_user(&username)?;

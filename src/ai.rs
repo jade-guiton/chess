@@ -180,7 +180,7 @@ fn negamax(pos: &Position, depth: u32, min: i16, max: i16) -> i16 {
 	if depth == 0 {
 		return eval(pos.get_board(), color);
 	}
-	let moves = pos.gen_pseudolegal();
+	let mut moves = pos.gen_pseudolegal();
 	if moves.len() == 0 {
 		if pos.is_in_check(color) {
 			return -std::i16::MAX; // checkmate
@@ -188,6 +188,11 @@ fn negamax(pos: &Position, depth: u32, min: i16, max: i16) -> i16 {
 			return 0; // stalemate
 		}
 	}
+	moves.sort_by_cached_key(|mov| {
+		let mut pos2 = pos.clone();
+		pos2.apply_move(mov);
+		-eval(pos2.get_board(), color)
+	});
 	let mut cur_max = min;
 	for mov in moves {
 		let mut pos2 = pos.clone();
@@ -217,11 +222,18 @@ impl ChessAi for SimpleAi {
 	}
 	fn pick_move(&self, pos: &Position, legal_moves: &[Move]) -> Move {
 		let t0 = Instant::now();
+		let color = pos.side_to_move();
+		let mut legal_moves = legal_moves.to_owned();
+		legal_moves.sort_by_cached_key(|mov| {
+			let mut pos2 = pos.clone();
+			pos2.apply_move(mov);
+			-eval(pos2.get_board(), color)
+		});
 		let mut max = std::i16::MIN;
 		let mut best_move = None;
 		for mov in legal_moves {
 			let mut pos2 = pos.clone();
-			pos2.apply_move(mov);
+			pos2.apply_move(&mov);
 			let score = -negamax(&pos2, self.depth - 1, -std::i16::MAX, std::i16::MAX);
 			if score > max || (score == max && rand::random::<u8>() < 128) {
 				max = score;
